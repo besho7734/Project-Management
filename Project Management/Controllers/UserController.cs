@@ -1,14 +1,18 @@
-﻿using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
+﻿using AutoMapper;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Project_Management.Data;
+using Project_Management.Models;
 using Project_Management.Models.DTO;
 using Project_Management.Repository.IRepository;
+using System.Security.Claims;
 
 namespace Project_Management.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class UserController(IUserRepository _userRepo) : ControllerBase
+    public class UserController(IUserRepository _userRepo, ApplicationDbContext _db, IMapper _mapper) : ControllerBase
     {
         [HttpPost("login")]
         [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(LoginResponseDTO))]
@@ -103,5 +107,66 @@ namespace Project_Management.Controllers
             }
             return Ok(new { message = "Account Deleted successfully" });
         }
+        [Authorize]
+        [HttpGet("ChatHome")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        public async Task<IActionResult> ChatHome()
+        {
+            var userid = User.FindFirstValue(ClaimTypes.Name);
+            var messages = _db.chatMessages.Where(x => x.SenderId == userid || x.ReceiverId == userid).OrderByDescending(x => x.CreatedAt).ToList();
+            List<HomeChatDTO> UsersDTO = new List<HomeChatDTO>();
+            foreach (var message in messages)
+            {
+                var userDTO = new HomeChatDTO();
+                if (userid == message.SenderId)
+                {
+                    var user = await _db.applicationUsers.FirstOrDefaultAsync(x => x.Id == message.ReceiverId);
+                    userDTO.Id = user.Id;
+                    userDTO.UserName = user.UserName;
+                    userDTO.Message = message.Message;
+                    UsersDTO.Add(userDTO);
+                }
+                else if (userid == message.ReceiverId)
+                {
+                    var user = await _db.applicationUsers.FirstOrDefaultAsync(x => x.Id == message.SenderId);
+                    userDTO.Id = user.Id;
+                    userDTO.UserName = user.UserName;
+                    userDTO.Message = message.Message;
+                    UsersDTO.Add(userDTO);
+                }
+            }
+            UsersDTO = UsersDTO.GroupBy(u => u.Id).Select(g => g.First()).ToList();
+            return Ok(UsersDTO);
+        }
+        [Authorize]
+        [HttpPost("send/{id},{message}")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        public async Task<IActionResult> send(string id, string message)
+        {
+            var userid = User.FindFirstValue(ClaimTypes.Name);
+            ChatMessage chatMessage = new ChatMessage
+            {
+                SenderId = userid,
+                ReceiverId = id,
+                Message = message
+            };
+            await _db.chatMessages.AddAsync(chatMessage);
+            await _db.SaveChangesAsync();
+            return Ok();
+        }
+        [Authorize]
+        [HttpPut("Edit")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> Edit([FromBody] EditUserDTO model)
+        {
+            var result = await _userRepo.EditeUser(model);
+            if (!result)
+            {
+                return BadRequest(error: "Error while Editing Account");
+            }
+            return Ok();
+        }
+
     }
 }

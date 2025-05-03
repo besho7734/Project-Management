@@ -17,13 +17,13 @@ namespace Project_Management.Repository
     {
         private readonly ApplicationDbContext _db;
         private readonly IMapper _mapper;
-        private readonly IEmailSender _emailsender;
+        private readonly IEmailService _emailsender;
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly RoleManager<IdentityRole> _roleManager;
         private string secretkey;
         public UserRepository(ApplicationDbContext db, IConfiguration configuration
-            , UserManager<ApplicationUser> userManager, IMapper mapper, RoleManager<IdentityRole> roleManager , IEmailSender emailSender, IHttpContextAccessor httpContextAccessor)
+            , UserManager<ApplicationUser> userManager, IMapper mapper, RoleManager<IdentityRole> roleManager , IEmailService emailSender, IHttpContextAccessor httpContextAccessor)
         {
             _db = db;
             _mapper = mapper;
@@ -82,6 +82,7 @@ namespace Project_Management.Repository
                 Email = registerationRequestDTO.Email,
                 PhoneNumber = registerationRequestDTO.PhoneNumber,
                 NormalizedEmail = registerationRequestDTO.Email.ToUpper(),
+                bio = registerationRequestDTO.Bio
             };
             try
             {
@@ -174,7 +175,44 @@ namespace Project_Management.Repository
         {
             var userId = _httpContextAccessor.HttpContext.User.FindFirstValue(ClaimTypes.Name);
             var user = await _userManager.FindByIdAsync(userId);
+            var roles = await _userManager.GetRolesAsync(user);
+            if (roles.FirstOrDefault() == "manager") {
+                var projects = await _db.Projects.Where(p => p.ManagerId == user.Id).ToListAsync();
+                var admins = await _userManager.GetUsersInRoleAsync("admin");
+                foreach (var project in projects)
+                {
+                    project.ManagerId = admins.FirstOrDefault().Id;
+                }
+            }
+            var messages = await _db.chatMessages.Where(m => m.SenderId == user.Id || m.ReceiverId == user.Id).ToListAsync();
+            _db.chatMessages.RemoveRange(messages);
+            var tasks = await _db.tasks.Where(t => t.UserId == user.Id).ToListAsync();
+            foreach (var task in tasks)
+            {
+                var project = await _db.Projects.FirstOrDefaultAsync(p => p.Id == task.ProjectId);
+                task.UserId = project.ManagerId;
+            }
+            await _db.SaveChangesAsync();
+
             var result = await _userManager.DeleteAsync(user);
+            if (result.Succeeded) return true;
+            return false;
+        }
+        public async Task<bool> EditeUser(EditUserDTO model)
+        {
+            var userId = _httpContextAccessor.HttpContext.User.FindFirstValue(ClaimTypes.Name);
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user == null) return false;
+            user.FullName = model.FullName;
+            user.bio = model.Bio;
+            if(user.Email != model.Email)
+            {
+                user.EmailConfirmed = false;
+                string token = await _userManager.GenerateChangeEmailTokenAsync(user, model.Email);
+                var confirmationLink = $"https://localhost:7191/api/User/EmailConfrimation/{model.Email},{token}";
+                await _emailsender.SendEmailAsync(model.Email, "Confirm your email", $"<p>Your Email ConfirmationLink {confirmationLink}</p>");
+            }
+            var result = await _userManager.UpdateAsync(user);
             if (result.Succeeded) return true;
             return false;
         }

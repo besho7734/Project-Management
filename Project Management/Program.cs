@@ -18,6 +18,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(option =>
 {
     option.UseSqlServer(builder.Configuration.GetConnectionString("DefaultSQLConnection"));
 });
+builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("EmailSettings"));
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
 {
     options.SignIn.RequireConfirmedAccount = true;
@@ -26,7 +27,7 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
 }).
     AddEntityFrameworkStores<ApplicationDbContext>().AddDefaultTokenProviders();
 builder.Services.AddScoped<IUserRepository,UserRepository>();
-builder.Services.AddScoped<IEmailSender,EmailSender>();
+builder.Services.AddScoped<IEmailService,EmailSender>();
 builder.Services.AddAutoMapper(typeof(MappingConfig));
 builder.Services.AddHttpContextAccessor();
 var Key = builder.Configuration.GetValue<string>("ApiSettings:Secret");
@@ -76,6 +77,7 @@ builder.Services.AddSwaggerGen(Options =>
         }
     });
 });
+builder.Services.AddSignalR();
 
 var app = builder.Build();
 
@@ -93,5 +95,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+app.MapHub<ChatHub>("/chathub");
 
 app.Run();

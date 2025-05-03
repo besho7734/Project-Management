@@ -7,6 +7,8 @@ using Microsoft.EntityFrameworkCore;
 using Project_Management.Data;
 using Project_Management.Models;
 using Project_Management.Models.DTO;
+using SendGrid.Helpers.Mail;
+using System.Security.Claims;
 
 namespace Project_Management.Controllers
 {
@@ -92,6 +94,20 @@ namespace Project_Management.Controllers
         {
             var user = await _db.applicationUsers.FirstOrDefaultAsync(x => x.UserName == UserName);
             if (user == null) return NotFound(new { Messege = "Invalid User Name" });
+            var projects = await _db.Projects.Where(p => p.ManagerId == user.Id).ToListAsync();
+            foreach (var project in projects)
+            {
+                project.ManagerId = User.FindFirstValue(ClaimTypes.Name);
+            }
+            var messages = await _db.chatMessages.Where(m => m.SenderId == user.Id || m.ReceiverId == user.Id).ToListAsync();
+            _db.chatMessages.RemoveRange(messages);
+            var tasks = await _db.tasks.Where(t => t.UserId == user.Id).ToListAsync();
+            foreach (var task in tasks)
+            {
+                var project = await _db.Projects.FirstOrDefaultAsync(p => p.Id == task.ProjectId);
+                task.UserId = project.ManagerId;
+            }
+            await _db.SaveChangesAsync();
             var result = await _userManager.DeleteAsync(user);
             if (result.Succeeded)
             {

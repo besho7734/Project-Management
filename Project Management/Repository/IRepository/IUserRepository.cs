@@ -13,5 +13,6 @@ namespace Project_Management.Repository.IRepository
         Task<bool> resetPassword(ResetPasswordDTO resetPasswordDTO);
         Task<bool> ChangePassword(ChangePasswordRequestDTO changePasswordRequestDTO);
         Task<bool> DeleteUser();
+        Task<bool> EditeUser(EditUserDTO model);
     }
 }
