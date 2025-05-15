@@ -5,7 +5,7 @@ using Project_Management.Models;
 using Project_Management.Models.DTO;
 using System.Security.Claims;
 
-namespace Project_Management
+namespace Project_Management.Hubs
 {
     public class ChatHub : Hub
     {
@@ -16,9 +16,25 @@ namespace Project_Management
             _db = db;
             _httpContextAccessor = httpContextAccessor;
         }
-        public async Task SendMessage(string receiverId, string message)
+        public async Task SendMessage(string senderId, string receiverId, string message)
         {
-            var senderId = _httpContextAccessor.HttpContext.User.FindFirstValue(ClaimTypes.Name);
+            var id = _httpContextAccessor.HttpContext.User.FindFirstValue(ClaimTypes.Name); 
+
+            var sender = await _db.applicationUsers
+                .FirstOrDefaultAsync(x => x.Id == senderId);
+
+            if (sender == null)
+            {
+                await Clients.Caller.SendAsync("ChatError", "Unauthorized");
+                return;
+            }
+            var receiver = await _db.applicationUsers
+                .FirstOrDefaultAsync(x => x.Id == receiverId);
+            if (receiver == null)
+            { 
+                await Clients.Caller.SendAsync("GetMessagesError", "Can not find the receiver");
+                return;
+            }
             var chatMessage = new ChatMessage
             {
                 SenderId = senderId,
@@ -27,7 +43,7 @@ namespace Project_Management
             };
             _db.chatMessages.Add(chatMessage);
             await _db.SaveChangesAsync();
-            await Clients.User(receiverId).SendAsync("ReceiveMessage",senderId, message);
+            await Clients.User(receiverId).SendAsync("ReceiveMessage", senderId, message);
         }
         public async Task GetMessages(string receiverUserId)
         {
@@ -36,8 +52,9 @@ namespace Project_Management
                 .Where(m => m.ReceiverId == receiverUserId && m.SenderId == senderUserId)
                 .OrderByDescending(m => m.CreatedAt)
                 .ToList();
-            var unreadMessages = _db.chatMessages
-                .Where(m => m.SenderId == receiverUserId && m.ReceiverId == senderUserId && !m.IsRead);
+            var unreadMessages =await _db.chatMessages
+                .Where(m => m.SenderId == receiverUserId && m.ReceiverId == senderUserId && !m.IsRead)
+                .ToListAsync();
 
             foreach (var msg in unreadMessages)
             {
@@ -57,10 +74,10 @@ namespace Project_Management
                 return;
             }
 
-            var messages = _db.chatMessages
+            var messages = await _db.chatMessages
                 .Where(x => x.SenderId == userid || x.ReceiverId == userid)
                 .OrderByDescending(x => x.CreatedAt)
-                .ToList();
+                .ToListAsync();
             List<HomeChatDTO> UsersDTO = new List<HomeChatDTO>();
             foreach (var message in messages)
             {
@@ -83,7 +100,6 @@ namespace Project_Management
                 }
             }
             UsersDTO = UsersDTO.GroupBy(u => u.Id).Select(g => g.First()).ToList();
-
             await Clients.Caller.SendAsync("ReceiveChatHome", UsersDTO);
         }
     }

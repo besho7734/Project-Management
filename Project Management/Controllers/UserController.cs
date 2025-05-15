@@ -24,14 +24,23 @@ namespace Project_Management.Controllers
             {
                 return BadRequest(new { message = "Username or Password is incorrect" });
             }
+            if (loginresponse.User.EmailConfirmed == false)
+            {
+                return BadRequest(new { message = "Email not confirmed" });
+            }
             return Ok(loginresponse);
 
         }
         [HttpPost("register")]
         [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(UserDTO))]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        public async Task<IActionResult> Register([FromBody] RegisterationRequestDTO model)
+        public async Task<IActionResult> Register([FromForm] RegisterationRequestDTO model)
         {
+            bool ifEmailUnique = _userRepo.IsUniqueEmail(model.Email);
+            if (!ifEmailUnique)
+            {
+                return BadRequest(new { message = "Email already exists" });
+            }
             bool ifUserNameUnique = _userRepo.IsUniqueUser(model.UserName);
             if (!ifUserNameUnique)
             {
@@ -76,7 +85,7 @@ namespace Project_Management.Controllers
             var user = await _userRepo.resetPassword(model);
             if (!user)
             {
-                return BadRequest(error: "Error while reseting password");
+                return BadRequest(new { message = "Error while reseting password" });
             }
             return Ok(new { message = "Password Reset Done" });
         }
@@ -90,7 +99,7 @@ namespace Project_Management.Controllers
             var user = await _userRepo.ChangePassword(model);
             if (!user)
             {
-                return BadRequest(error: "Error while Changing password");
+                return BadRequest(new { message = "Error while Changing password"});
             }
             return Ok(new { message = "Password Changed successfully" });
         }
@@ -103,7 +112,7 @@ namespace Project_Management.Controllers
             var result = await _userRepo.DeleteUser();
             if (!result)
             {
-                return BadRequest(error: "Error while Deleting Account");
+                return BadRequest(new { message = "Error while Deleting Account" });
             }
             return Ok(new { message = "Account Deleted successfully" });
         }
@@ -163,10 +172,37 @@ namespace Project_Management.Controllers
             var result = await _userRepo.EditeUser(model);
             if (!result)
             {
-                return BadRequest(error: "Error while Editing Account");
+                return BadRequest(new { message = "The UserName or Email is already Used" });
             }
             return Ok();
         }
-
+        [Authorize]
+        [HttpGet("GetUser")]
+        [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(GetUserToReturnDTO))]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> GetUser()
+        {
+            var user = await _userRepo.GetUser();
+            if (user == null)
+            {
+                return BadRequest(new { message = "Error while getting user" });
+            }
+            return Ok(user);
+        }
+        [Authorize]
+        [HttpGet("GetAllUsers")]
+        [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(List<GetUserToReturnDTO>))]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> GetUsers()
+        {
+            var users = await _userRepo.GetUsers();
+            if (users == null)
+            {
+                return BadRequest(new { message = "Error while getting users" });
+            }
+            return Ok(users);
+        }
     }
 }

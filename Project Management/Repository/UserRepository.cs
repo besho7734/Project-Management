@@ -39,6 +39,12 @@ namespace Project_Management.Repository
             if (User == null) return true;
             return false;
         }
+        public bool IsUniqueEmail(string email)
+        {
+            var User = _db.applicationUsers.FirstOrDefault(x => x.Email == email);
+            if (User == null) return true;
+            return false;
+        }
         public async Task<LoginResponseDTO> Login(LoginRequestDTO loginRequestDTO)
         {
             var user = await _db.applicationUsers.FirstOrDefaultAsync(x => x.Email == loginRequestDTO.Email);
@@ -84,11 +90,35 @@ namespace Project_Management.Repository
                 NormalizedEmail = registerationRequestDTO.Email.ToUpper(),
                 bio = registerationRequestDTO.Bio
             };
+            if (registerationRequestDTO.Image != null)
+            {
+                string fileName = user.Id + Path.GetExtension(registerationRequestDTO.Image.FileName);
+                string filepath = @"wwwroot/ProfilePic/" + fileName;
+                var directoryLocation = Path.Combine(Directory.GetCurrentDirectory(), filepath);
+                FileInfo file = new FileInfo(directoryLocation);
+                if (file.Exists)
+                {
+                    file.Delete();
+                }
+                using (var filestream = new FileStream(directoryLocation, FileMode.Create))
+                {
+                    await registerationRequestDTO.Image.CopyToAsync(filestream);
+                }
+                var baseUrl = $"{_httpContextAccessor.HttpContext.Request.Scheme}://{_httpContextAccessor.HttpContext.Request.Host.Value}{_httpContextAccessor.HttpContext.Request.PathBase.Value}";
+                user.ImageUrl = $"{baseUrl}/ProfilePic/{fileName}";
+                user.ImageLocalPath = filepath;
+
+            }
+            else
+            {
+                user.ImageUrl = "https://placehold.co/600*400";
+            }
             try
             {
                 var Users = await _db.applicationUsers.ToListAsync();
                 if (!Users.Any())
                 {
+                
                     var result = await _userManager.CreateAsync(user, registerationRequestDTO.Password);
                     if (result.Succeeded)
                     {
@@ -99,9 +129,11 @@ namespace Project_Management.Repository
                             await _roleManager.CreateAsync(new IdentityRole("user"));
                         }
                         await _userManager.AddToRoleAsync(user, "admin");
+
+
                         var UserToReturn = await _db.applicationUsers.FirstOrDefaultAsync(x => x.Email == registerationRequestDTO.Email);
                         var EmailToken = await _userManager.GenerateEmailConfirmationTokenAsync(user);
-                        var confirmationLink = $"https://localhost:7191/api/User/EmailConfrimation/{user.Email},{EmailToken}";
+                        var confirmationLink = $"{_httpContextAccessor.HttpContext.Request.Scheme}://{_httpContextAccessor.HttpContext.Request.Host.Value}{_httpContextAccessor.HttpContext.Request.PathBase.Value}/{user.Email},{EmailToken}";
                         var userDTO = _mapper.Map<UserDTO>(UserToReturn);
                         userDTO.EmailConfirmationToken = EmailToken;
                         await _emailsender.SendEmailAsync(user.Email, "Confirm your email", $"<p>Your Email ConfirmationLink {confirmationLink}</p>");
@@ -120,9 +152,10 @@ namespace Project_Management.Repository
                             await _roleManager.CreateAsync(new IdentityRole("user"));
                         }
                         await _userManager.AddToRoleAsync(user, "user");
+
                         var UserToReturn = await _db.applicationUsers.FirstOrDefaultAsync(x => x.Email == registerationRequestDTO.Email);
                         var EmailToken = await _userManager.GenerateEmailConfirmationTokenAsync(user);
-                        var confirmationLink = $"https://localhost:7191/api/User/EmailConfrimation/{user.Email},{EmailToken}";
+                        var confirmationLink = $"{_httpContextAccessor.HttpContext.Request.Scheme}://{_httpContextAccessor.HttpContext.Request.Host.Value}{_httpContextAccessor.HttpContext.Request.PathBase.Value}/api/User/EmailConfrimation/{user.Email},{EmailToken}";
                         var userDTO = _mapper.Map<UserDTO>(UserToReturn);
                         userDTO.EmailConfirmationToken = EmailToken;
                         await _emailsender.SendEmailAsync(user.Email, "Confirm your email", $"<p>Your Email ConfirmationLink {confirmationLink}</p>");
@@ -134,7 +167,7 @@ namespace Project_Management.Repository
             {
 
             }
-            return new UserDTO();
+            return null;
         }
         public async Task<UserDTO> EmailConfrimation(string Email, string Token)
         {
@@ -201,20 +234,56 @@ namespace Project_Management.Repository
         public async Task<bool> EditeUser(EditUserDTO model)
         {
             var userId = _httpContextAccessor.HttpContext.User.FindFirstValue(ClaimTypes.Name);
+            var UserName = await _db.applicationUsers
+                .Where(x => x.Id != userId)
+                .FirstOrDefaultAsync(x => x.UserName == model.UserName);
+            if (UserName != null) return false; 
+            var Email = await _db.applicationUsers
+                .Where(x => x.Id != userId)
+                .FirstOrDefaultAsync(x => x.Email == model.Email);
+            if (Email != null) return false;
             var user = await _userManager.FindByIdAsync(userId);
             if (user == null) return false;
-            user.FullName = model.FullName;
+            user.UserName = model.UserName;
             user.bio = model.Bio;
-            if(user.Email != model.Email)
+            user.PhoneNumber = model.PhoneNumber;
+            if (user.Email != model.Email)
             {
+                user.Email = model.Email;
                 user.EmailConfirmed = false;
                 string token = await _userManager.GenerateChangeEmailTokenAsync(user, model.Email);
-                var confirmationLink = $"https://localhost:7191/api/User/EmailConfrimation/{model.Email},{token}";
+                var confirmationLink = $"https://frankly-refined-escargot.ngrok-free.app/{model.Email},{token}";
                 await _emailsender.SendEmailAsync(model.Email, "Confirm your email", $"<p>Your Email ConfirmationLink {confirmationLink}</p>");
             }
             var result = await _userManager.UpdateAsync(user);
             if (result.Succeeded) return true;
             return false;
+        }
+        public async Task<GetUserToReturnDTO> GetUser()
+        {
+            var userId = _httpContextAccessor.HttpContext.User.FindFirstValue(ClaimTypes.Name);
+            var user = await _db.applicationUsers.FirstOrDefaultAsync(x => x.Id == userId);
+            if (user == null) return null;
+            var roles = await _userManager.GetRolesAsync(user);
+            var userDTO = _mapper.Map<GetUserToReturnDTO>(user);
+            userDTO.Role = roles.FirstOrDefault();
+            return userDTO;
+        }
+
+        public async Task<List<GetUserToReturnDTO>> GetUsers()
+        {
+            var users = await _db.applicationUsers
+                .Where(x => x.Id != _httpContextAccessor.HttpContext.User
+                .FindFirstValue(ClaimTypes.Name)).ToListAsync();
+            List<GetUserToReturnDTO> UsersDTO = new List<GetUserToReturnDTO>();
+            foreach(var user in users)
+            {
+                var roles = await _userManager.GetRolesAsync(user);
+                var userDTO = _mapper.Map<GetUserToReturnDTO>(user);
+                userDTO.Role = roles.FirstOrDefault();
+                UsersDTO.Add(userDTO);
+            }
+            return UsersDTO;
         }
     }
 }

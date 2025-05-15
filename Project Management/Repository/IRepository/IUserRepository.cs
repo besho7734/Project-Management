@@ -6,6 +6,7 @@ namespace Project_Management.Repository.IRepository
     public interface IUserRepository
     {
         bool IsUniqueUser(string username);
+        bool IsUniqueEmail(string email);
         Task<LoginResponseDTO> Login(LoginRequestDTO loginRequestDTO);
         Task<UserDTO> Register(RegisterationRequestDTO registerationRequestDTO);
         Task<UserDTO> EmailConfrimation(string email, string token);
@@ -14,5 +15,7 @@ namespace Project_Management.Repository.IRepository
         Task<bool> ChangePassword(ChangePasswordRequestDTO changePasswordRequestDTO);
         Task<bool> DeleteUser();
         Task<bool> EditeUser(EditUserDTO model);
+        Task<GetUserToReturnDTO> GetUser();
+        Task<List<GetUserToReturnDTO>> GetUsers();
     }
 }

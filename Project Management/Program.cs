@@ -2,10 +2,13 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Project_Management;
 using Project_Management.Data;
+using Project_Management.Hubs;
 using Project_Management.Models;
 using Project_Management.Repository;
 using Project_Management.Repository.IRepository;
@@ -46,6 +49,21 @@ builder.Services.AddAuthentication(x => {
         ValidateIssuer = false,
         ValidateAudience = false,
     };
+    x.Events = new JwtBearerEvents
+     {
+         OnMessageReceived = context =>
+         {
+             var accessToken = context.Request.Query["access_token"];
+             var path = context.HttpContext.Request.Path;
+
+             // Match your hub endpoint
+             if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/Hubs/ChatHub"))
+             {
+                 context.Token = accessToken;
+             }
+             return Task.CompletedTask;
+         }
+     };
 });
 builder.Services.AddControllers();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
@@ -87,6 +105,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+app.UseStaticFiles();
 
 app.UseHttpsRedirection();
 
@@ -96,6 +115,6 @@ app.UseAuthorization();
 
 app.MapControllers();
 
-app.MapHub<ChatHub>("/chathub");
+app.MapHub<ChatHub>("/Hubs/ChatHub");
 
 app.Run();

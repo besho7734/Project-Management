@@ -113,7 +113,7 @@ namespace Project_Management.Controllers
             {
                 return Ok();
             }
-            return BadRequest(error: "Error while deleting the user");
+            return BadRequest(new { message = "Error while deleting the user" });
         }
     }
 }

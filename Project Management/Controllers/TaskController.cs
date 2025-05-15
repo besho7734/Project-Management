@@ -1,4 +1,5 @@
 ﻿using AutoMapper;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -12,6 +13,7 @@ namespace Project_Management.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class TaskController : ControllerBase
     {
         private readonly ApplicationDbContext _db;
@@ -52,7 +54,7 @@ namespace Project_Management.Controllers
         {
             if (Id <= 0)
             {
-                return BadRequest(error: "Invalid Id");
+                return BadRequest(new { message = "Invalid Id" });
             }
 
             var task = await _db.tasks.Include(x => x.Project).Include(x => x.AssignedTo).FirstOrDefaultAsync(x => x.Id == Id);
@@ -94,21 +96,21 @@ namespace Project_Management.Controllers
         {
             if (model == null)
             {
-                return BadRequest(error: "Invalid Tasks");
+                return BadRequest(new { message = "Invalid Tasks" });
             }
             if (model.Deadline <= DateTime.Now)
             {
-                return BadRequest(error: "Invalid Deadline");
+                return BadRequest(new { message = "Invalid Deadline" });
             }
             var project = await _db.Projects.FirstOrDefaultAsync(x => x.Id == model.ProjectId);
             if (project == null)
             {
-                return BadRequest(error: "Invalid ProjectId");
+                return BadRequest(new { message = "Invalid ProjectId" });
             }
-            var user = await _db.applicationUsers.FirstOrDefaultAsync(x => x.UserName == model.AssignedTo);
+            var user = await _db.applicationUsers.FirstOrDefaultAsync(x => x.Email == model.AssignedTo);
             if (user == null)
             {
-                return BadRequest(error: "Invalid Assigned UserName");
+                return BadRequest(new { message = "Invalid Assigned UserName" });
             }
             task task = new task();
             task.Title = model.Title;
@@ -132,7 +134,7 @@ namespace Project_Management.Controllers
         {
             if (Id <= 0)
             {
-                return BadRequest(error: "Invalid Id");
+                return BadRequest(new { message = "Invalid Id" });
             }
 
             var task = await _db.tasks.FirstOrDefaultAsync(x => x.Id == Id);
@@ -145,6 +147,7 @@ namespace Project_Management.Controllers
             return Ok();
         }
 
+        [Authorize(Roles = "admin,manager")]
         [HttpPut("UpdateTask/{Id:int}")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -155,17 +158,55 @@ namespace Project_Management.Controllers
         {
             if (Id <= 0 || Id !=model.Id)
             {
-                return BadRequest(error: "Invalid Id");
+                return BadRequest(new { message = "Invalid Id" });
             }
             if(model == null)
             {
-                return BadRequest(error: "Invalid Task Update");
+                return BadRequest(new { message = "Invalid Task Update" });
             }
-            var task = await _db.tasks.AsNoTracking().Include(x=>x.Project).FirstOrDefaultAsync(x => x.Id == Id);
+            var task = await _db.tasks
+                .AsNoTracking()
+                .Include(x=>x.Project)
+                .FirstOrDefaultAsync(x => x.Id == Id);
             if (model.Deadline <= task.CreatedDate)
             {
-                return BadRequest(error: "Invalid Deadline");
+                return BadRequest(new { message = "Invalid Deadline" });
             }
+            if (task == null)
+            {
+                return NotFound(new { message = "Task not found" });
+            }
+            if (User.FindFirstValue(ClaimTypes.Role) != "admin")
+            {
+                if (User.FindFirstValue(ClaimTypes.Name) != task.Project.ManagerId)
+                {
+
+                    return Forbid();
+
+                }
+            }
+            var AssignedTo = await _db.applicationUsers
+                .FirstOrDefaultAsync(x => x.Email == model.AssignedTo);
+            task.Deadline = model.Deadline;
+            task.Title = model.Title;
+            task.Description = model.Description;
+            task.UserId = AssignedTo.Id;
+            _db.tasks.Update(task);
+            await _db.SaveChangesAsync();
+            return Ok();
+        }
+        [HttpPut("UpdateIsDone/{Id:int},{IsDone:bool}")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> UpdateIsDone(int Id, bool IsDone)
+        {
+            var task = await _db.tasks
+                .AsNoTracking()
+                .Include(x => x.Project)
+                .FirstOrDefaultAsync(x => x.Id == Id);
             if (task == null)
             {
                 return NotFound(new { message = "Task not found" });
@@ -176,14 +217,11 @@ namespace Project_Management.Controllers
                 {
                     if (User.FindFirstValue(ClaimTypes.Name) != task.UserId)
                     {
-                        return Forbid();
+                        return StatusCode(StatusCodes.Status403Forbidden, new { message = "This is not your task" });
                     }
                 }
             }
-            task.Deadline = model.Deadline;
-            task.Title = model.Title;
-            task.Description = model.Description;
-            task.IsDone = model.IsDone;
+            task.IsDone = IsDone;
             _db.tasks.Update(task);
             await _db.SaveChangesAsync();
             return Ok();

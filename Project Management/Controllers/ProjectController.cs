@@ -12,7 +12,7 @@ using System.Security.Claims;
 
 namespace Project_Management.Controllers
 {
-    //[Authorize]
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class ProjectController : ControllerBase
@@ -27,22 +27,112 @@ namespace Project_Management.Controllers
             _userManager = userManager;
         }
         [HttpGet("GetAllProjects")]
-        [ProducesResponseType(StatusCodes.Status200OK,Type =typeof(List<ProjectDTO>))]
+        [ProducesResponseType(StatusCodes.Status200OK,Type =typeof(List<ProjectTasksViewModel>))]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
         public async Task<IActionResult> GetAllProjects()
         {
-            var projects = await _db.Projects.Include(x=>x.Manager).ToListAsync();
-            List<ProjectDTO> projectsDTO = new List<ProjectDTO>();
-            foreach (var project in projects)
+            if (User.FindFirstValue(ClaimTypes.Role) != "admin")
             {
-                var projectDTO = _mapper.Map<ProjectDTO>(project);
-                projectDTO.ManagerUserName = project.Manager.UserName;
-                projectsDTO.Add(projectDTO);
+                var projects = await _db.Projects.Include(x => x.Manager)
+                    .Where(x => x.ManagerId == User
+                    .FindFirstValue(ClaimTypes.Name))
+                    .ToListAsync();
+                List<ProjectTasksViewModel> projectsDTO = new List<ProjectTasksViewModel>();
+                if (projects.Any())
+                {
+                    foreach (var project in projects)
+                    {
+                        var tasks = await _db
+                        .tasks
+                        .Where(x => x.ProjectId == project.Id)
+                        .Include(x => x.AssignedTo)
+                        .ToListAsync();
+                        List<TaskDTO> tasksDTO = new List<TaskDTO>();
+                        foreach (var task in tasks)
+                        {
+                            var taskDTO = _mapper.Map<TaskDTO>(task);
+                            taskDTO.ProjectName = task.Project.Name;
+                            taskDTO.AssignedTo = task.AssignedTo.Email;
+                            tasksDTO.Add(taskDTO);
+                        }
+                        var projectDTO = _mapper.Map<ProjectDTO>(project);
+                        projectDTO.ManagerUserName = project.Manager.UserName;
+                        ProjectTasksViewModel model = new ProjectTasksViewModel()
+                        {
+                            Project = projectDTO,
+                            Tasks = tasksDTO
+                        };
+                        projectsDTO.Add(model);
+                    }
+                }
+                var Tasks = await _db.tasks
+                    .Where(x => x.UserId == User
+                    .FindFirstValue(ClaimTypes.Name))
+                    .ToListAsync();
+                if (Tasks.Any())
+                {
+                    foreach (var task in Tasks)
+                    {
+                        var project = await _db.Projects
+                            .Include(x=>x.Manager)
+                            .FirstOrDefaultAsync(x => x.Id == task.ProjectId);
+                        var tasks = await _db.tasks
+                            .Where(x => x.ProjectId == project.Id)
+                            .Include(x => x.AssignedTo)
+                            .ToListAsync();
+                        List<TaskDTO> tasksDTO = new List<TaskDTO>();
+                        foreach (var Task in tasks)
+                        {
+                            var taskDTO = _mapper.Map<TaskDTO>(Task);
+                            taskDTO.ProjectName = task.Project.Name;
+                            taskDTO.AssignedTo = task.AssignedTo.Email;
+                            tasksDTO.Add(taskDTO);
+                        }
+                        var projectDTO = _mapper.Map<ProjectDTO>(project);
+                        projectDTO.ManagerUserName = project.Manager.UserName;
+                        ProjectTasksViewModel model = new ProjectTasksViewModel()
+                        {
+                            Project = projectDTO,
+                            Tasks = tasksDTO
+                        };
+                        projectsDTO.Add(model);
+                    }
+                }
+                return Ok(projectsDTO.GroupBy(x => x.Project.Id).Select(g => g.First()));
             }
-            return Ok(projectsDTO);
+            else
+            {
+                var projects = await _db.Projects.Include(x => x.Manager).ToListAsync();
+                List<ProjectTasksViewModel> projectsDTO = new List<ProjectTasksViewModel>();
+                foreach (var project in projects)
+                {
+                    var tasks = await _db
+                        .tasks
+                        .Where(x => x.ProjectId == project.Id)
+                        .Include(x=>x.AssignedTo)
+                        .ToListAsync();
+                    List<TaskDTO> tasksDTO = new List<TaskDTO>();
+                    foreach (var task in tasks)
+                    {
+                        var taskDTO = _mapper.Map<TaskDTO>(task);
+                        taskDTO.ProjectName = task.Project.Name;
+                        taskDTO.AssignedTo = task.AssignedTo.Email;
+                        tasksDTO.Add(taskDTO);
+                    }
+                    var projectDTO = _mapper.Map<ProjectDTO>(project);
+                    projectDTO.ManagerUserName = project.Manager.UserName;
+                    ProjectTasksViewModel model = new ProjectTasksViewModel()
+                    {
+                        Project = projectDTO,
+                        Tasks = tasksDTO
+                    };
+                    projectsDTO.Add(model);
+                }
+                return Ok(projectsDTO);
+            }
         }
         [HttpGet("GetMyProjects")]
         [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(List<ProjectDTO>))]
@@ -72,7 +162,7 @@ namespace Project_Management.Controllers
         {
             if (Id <= 0)
             {
-                return BadRequest(error: "Invalid Id");
+                return BadRequest(new { message = "Invalid Id" });
             }
             var project = await _db.Projects.FirstOrDefaultAsync(x => x.Id == Id);
             if (project == null)
@@ -88,7 +178,7 @@ namespace Project_Management.Controllers
             {
                 var taskDTO = _mapper.Map<TaskDTO>(task);
                 taskDTO.ProjectName = task.Project.Name;
-                taskDTO.AssignedTo = task.AssignedTo.UserName;
+                taskDTO.AssignedTo = task.AssignedTo.Email;
                 tasksDTO.Add(taskDTO);
             }
             ProjectTasksViewModel projectTasks = new ProjectTasksViewModel()
@@ -98,7 +188,6 @@ namespace Project_Management.Controllers
             };
             return Ok(projectTasks);
         }
-        //[Authorize(Roles ="admin,manager")]
         [HttpPost("CreateProject")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -109,41 +198,39 @@ namespace Project_Management.Controllers
         {
             if (model == null)
             {
-                return BadRequest(error: "Invalid project");
+                return BadRequest(new { message = "Invalid project" });
             }
             var project = _mapper.Map<Project>(model);
             project.CreatedDate = DateTime.Now;
             if (model.Deadline <= project.CreatedDate)
             {
-                return BadRequest(error: "Invalid Deadline");
+                return BadRequest(new { message = "Invalid Deadline" });
             }
             project.ManagerId = User.FindFirstValue(ClaimTypes.Name);
             await _db.Projects.AddAsync(project);
             await _db.SaveChangesAsync();
             return Ok();
         }
-        [Authorize(Roles = "admin,manager")]
         [HttpPut("UpdateProject/{Id:int}")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
-        [Authorize(Roles = "admin,manager")]
         public async Task<IActionResult> UpdateProject(int Id, [FromBody] ProjectUpdateDTO model)
         {
             if (Id <= 0 || Id!=model.Id)
             {
-                return BadRequest(error: "Invalid Id");
+                return BadRequest(new { message = "Invalid Id" });
             }
             if (model == null)
             {
-                return BadRequest(error: "Invalid project Update");
+                return BadRequest(new { message = "Invalid project Update" });
             }
             var project = await _db.Projects.AsNoTracking().FirstOrDefaultAsync(x => x.Id == Id);
             if (model.Deadline <= project.CreatedDate)
             {
-                return BadRequest(error: "Invalid Deadline");
+                return BadRequest(new { message = "Invalid Deadline" });
             }
             if (User.FindFirstValue(ClaimTypes.Role) != "admin")
             {
@@ -173,7 +260,7 @@ namespace Project_Management.Controllers
         {
             if (Id <= 0)
             {
-                return BadRequest(error: "Invalid Id");
+                return BadRequest(new { message = "Invalid Id" });
             }
             var project = await _db.Projects.AsNoTracking().FirstOrDefaultAsync(x => x.Id == Id);
             if (User.FindFirstValue(ClaimTypes.Name) != project.ManagerId)

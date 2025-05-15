@@ -21,7 +21,7 @@ namespace Project_Management
         public async Task SendEmailAsync(string email, string subject, string htmlMessage)
         {
             var Email = new MimeMessage();
-            Email.Sender = MailboxAddress.Parse(_emailSettings.Email);
+            Email.From.Add(new MailboxAddress(_emailSettings.DisplayName, _emailSettings.Email));
             Email.To.Add(MailboxAddress.Parse(email));
             Email.Subject = subject;
             var builder = new BodyBuilder();
