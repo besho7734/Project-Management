@@ -95,9 +95,15 @@ namespace Project_Management.Controllers
             var user = await _db.applicationUsers.FirstOrDefaultAsync(x => x.UserName == UserName);
             if (user == null) return NotFound(new { Messege = "Invalid User Name" });
             var projects = await _db.Projects.Where(p => p.ManagerId == user.Id).ToListAsync();
-            foreach (var project in projects)
+            if (projects.Any())
             {
-                project.ManagerId = User.FindFirstValue(ClaimTypes.Name);
+                foreach (var project in projects)
+                {
+                    var tasksremoved = await _db.tasks.Where(x => x.ProjectId == project.Id).ToListAsync();
+                    _db.tasks.RemoveRange(tasksremoved);
+                }
+                await _db.SaveChangesAsync();
+                _db.Projects.RemoveRange(projects);
             }
             var messages = await _db.chatMessages.Where(m => m.SenderId == user.Id || m.ReceiverId == user.Id).ToListAsync();
             _db.chatMessages.RemoveRange(messages);
@@ -108,6 +114,15 @@ namespace Project_Management.Controllers
                 task.UserId = project.ManagerId;
             }
             await _db.SaveChangesAsync();
+            if (!string.IsNullOrEmpty(user.ImageLocalPath))
+            {
+                var oldFileDirectory = Path.Combine(Directory.GetCurrentDirectory(), user.ImageLocalPath);
+                FileInfo file = new FileInfo(oldFileDirectory);
+                if (file.Exists)
+                {
+                    file.Delete();
+                }
+            }
             var result = await _userManager.DeleteAsync(user);
             if (result.Succeeded)
             {

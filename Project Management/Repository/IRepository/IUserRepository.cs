@@ -17,5 +17,7 @@ namespace Project_Management.Repository.IRepository
         Task<bool> EditeUser(EditUserDTO model);
         Task<GetUserToReturnDTO> GetUser();
         Task<List<GetUserToReturnDTO>> GetUsers();
+        Task<bool> ChangeProfilPic(IFormFile NewImage);
+        Task<bool> DeleteProfilePic();
     }
 }

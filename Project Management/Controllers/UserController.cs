@@ -204,5 +204,31 @@ namespace Project_Management.Controllers
             }
             return Ok(users);
         }
+        [Authorize]
+        [HttpPut("ChangeProfilePic")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> ChangeProfilePic(IFormFile NewImage)
+        {
+            var result = await _userRepo.ChangeProfilPic(NewImage);
+            if (!result)
+            {
+                return BadRequest(new { message = "Error while changing profile pic" });
+            }
+            return Ok(new { message = "Profile Pic Changed successfully" });
+        }
+        [Authorize]
+        [HttpPut("DeleteProfilePic")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> DeleteProfilePic()
+        {
+            var result = await _userRepo.DeleteProfilePic();
+            if (!result)
+            {
+                return BadRequest(new { message = "Error while deleting profile pic" });
+            }
+            return Ok(new { message = "Profile Pic Deleted successfully" });
+        }
     }
 }

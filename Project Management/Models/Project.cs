@@ -15,6 +15,8 @@ namespace Project_Management.Models
         [ForeignKey("Manager")]
         public string ManagerId { get; set; }
         public ApplicationUser Manager { get; set; }
+        public string? DocumentUrl { get; set; }
+        public string? DocumntLocalPath { get; set; }
 
     }
 }

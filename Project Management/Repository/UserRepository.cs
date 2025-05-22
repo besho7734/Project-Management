@@ -209,13 +209,16 @@ namespace Project_Management.Repository
             var userId = _httpContextAccessor.HttpContext.User.FindFirstValue(ClaimTypes.Name);
             var user = await _userManager.FindByIdAsync(userId);
             var roles = await _userManager.GetRolesAsync(user);
-            if (roles.FirstOrDefault() == "manager") {
-                var projects = await _db.Projects.Where(p => p.ManagerId == user.Id).ToListAsync();
-                var admins = await _userManager.GetUsersInRoleAsync("admin");
+            var projects = await _db.Projects.Where(p => p.ManagerId == user.Id).ToListAsync();
+            if (projects.Any())
+            {
                 foreach (var project in projects)
                 {
-                    project.ManagerId = admins.FirstOrDefault().Id;
+                    var tasksremoved = await _db.tasks.Where(x => x.ProjectId == project.Id).ToListAsync();
+                    _db.tasks.RemoveRange(tasksremoved);
                 }
+                await _db.SaveChangesAsync();
+                _db.Projects.RemoveRange(projects);
             }
             var messages = await _db.chatMessages.Where(m => m.SenderId == user.Id || m.ReceiverId == user.Id).ToListAsync();
             _db.chatMessages.RemoveRange(messages);
@@ -226,7 +229,15 @@ namespace Project_Management.Repository
                 task.UserId = project.ManagerId;
             }
             await _db.SaveChangesAsync();
-
+            if (!string.IsNullOrEmpty(user.ImageLocalPath))
+            {
+                var oldFileDirectory = Path.Combine(Directory.GetCurrentDirectory(), user.ImageLocalPath);
+                FileInfo file = new FileInfo(oldFileDirectory);
+                if (file.Exists)
+                {
+                    file.Delete();
+                }
+            }
             var result = await _userManager.DeleteAsync(user);
             if (result.Succeeded) return true;
             return false;
@@ -285,5 +296,64 @@ namespace Project_Management.Repository
             }
             return UsersDTO;
         }
+
+        public async Task<bool> ChangeProfilPic(IFormFile NewImage)
+        {
+            var user = await _userManager
+                .FindByIdAsync(_httpContextAccessor.HttpContext.User.FindFirstValue(ClaimTypes.Name));
+
+            if (NewImage != null)
+            {
+                if (!string.IsNullOrEmpty(user.ImageLocalPath))
+                {
+                    var oldFileDirectory = Path.Combine(Directory.GetCurrentDirectory(), user.ImageLocalPath);
+                    FileInfo file = new FileInfo(oldFileDirectory);
+                    if (file.Exists)
+                    {
+                        file.Delete();
+                    }
+                }
+
+                string fileName = user.Id + Path.GetExtension(NewImage.FileName);
+                string filepath = @"wwwroot/ProfilePic/" + fileName;
+                var directoryLocation = Path.Combine(Directory.GetCurrentDirectory(), filepath);
+                using (var filestream = new FileStream(directoryLocation, FileMode.Create))
+                {
+                    await NewImage.CopyToAsync(filestream);
+                }
+                var baseUrl = $"{_httpContextAccessor.HttpContext.Request.Scheme}://{_httpContextAccessor.HttpContext.Request.Host.Value}{_httpContextAccessor.HttpContext.Request.PathBase.Value}";
+                user.ImageUrl = $"{baseUrl}/ProfilePic/{fileName}";
+                user.ImageLocalPath = filepath;
+
+            }
+            else
+            {
+                user.ImageUrl = "https://placehold.co/600*400";
+            }
+            var result = await _userManager.UpdateAsync(user);
+            if (result.Succeeded) return true;
+            return false;
+        }
+
+        public async Task<bool> DeleteProfilePic()
+        {
+            var user = await _userManager
+               .FindByIdAsync(_httpContextAccessor.HttpContext.User.FindFirstValue(ClaimTypes.Name));
+            if (!string.IsNullOrEmpty(user.ImageLocalPath))
+            {
+                var oldFileDirectory = Path.Combine(Directory.GetCurrentDirectory(), user.ImageLocalPath);
+                FileInfo file = new FileInfo(oldFileDirectory);
+                if (file.Exists)
+                {
+                    file.Delete();
+                }
+            }
+            user.ImageUrl = "https://placehold.co/600*400";
+            user.ImageLocalPath = null;
+            var result = await _userManager.UpdateAsync(user);
+            if (result.Succeeded) return true;
+            return false;
+        }
+
     }
 }

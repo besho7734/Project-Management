@@ -20,14 +20,14 @@ namespace Project_Management.Controllers
         private readonly ApplicationDbContext _db;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly IMapper _mapper;
-        public ProjectController(ApplicationDbContext db,IMapper mapper, UserManager<ApplicationUser> userManager)
+        public ProjectController(ApplicationDbContext db, IMapper mapper, UserManager<ApplicationUser> userManager)
         {
             _db = db;
             _mapper = mapper;
             _userManager = userManager;
         }
         [HttpGet("GetAllProjects")]
-        [ProducesResponseType(StatusCodes.Status200OK,Type =typeof(List<ProjectTasksViewModel>))]
+        [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(List<ProjectTasksViewModel>))]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -77,7 +77,7 @@ namespace Project_Management.Controllers
                     foreach (var task in Tasks)
                     {
                         var project = await _db.Projects
-                            .Include(x=>x.Manager)
+                            .Include(x => x.Manager)
                             .FirstOrDefaultAsync(x => x.Id == task.ProjectId);
                         var tasks = await _db.tasks
                             .Where(x => x.ProjectId == project.Id)
@@ -112,7 +112,7 @@ namespace Project_Management.Controllers
                     var tasks = await _db
                         .tasks
                         .Where(x => x.ProjectId == project.Id)
-                        .Include(x=>x.AssignedTo)
+                        .Include(x => x.AssignedTo)
                         .ToListAsync();
                     List<TaskDTO> tasksDTO = new List<TaskDTO>();
                     foreach (var task in tasks)
@@ -134,24 +134,8 @@ namespace Project_Management.Controllers
                 return Ok(projectsDTO);
             }
         }
-        [HttpGet("GetMyProjects")]
-        [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(List<ProjectDTO>))]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        [ProducesResponseType(StatusCodes.Status403Forbidden)]
-        public async Task<IActionResult> GetMyProjects()
-        {
-            var projects = await _db.Projects.Include(x => x.Manager).Where(x => x.ManagerId == User.FindFirstValue(ClaimTypes.Name)).ToListAsync();
-            List<ProjectDTO> projectsDTO = new List<ProjectDTO>();
-            foreach (var project in projects)
-            {
-                var projectDTO = _mapper.Map<ProjectDTO>(project);
-                projectDTO.ManagerUserName = project.Manager.UserName;
-                projectsDTO.Add(projectDTO);
-            }
-            return Ok(projectsDTO);
-        }
+
+
         [HttpGet("GetOneProject/{Id:int}")]
         [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(ProjectTasksViewModel))]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -194,7 +178,7 @@ namespace Project_Management.Controllers
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
-        public async Task<IActionResult> CreateProject([FromBody]ProjectCreateDTO model)
+        public async Task<IActionResult> CreateProject([FromBody] ProjectCreateDTO model)
         {
             if (model == null)
             {
@@ -219,7 +203,7 @@ namespace Project_Management.Controllers
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
         public async Task<IActionResult> UpdateProject(int Id, [FromBody] ProjectUpdateDTO model)
         {
-            if (Id <= 0 || Id!=model.Id)
+            if (Id <= 0 || Id != model.Id)
             {
                 return BadRequest(new { message = "Invalid Id" });
             }
@@ -277,5 +261,94 @@ namespace Project_Management.Controllers
             await _db.SaveChangesAsync();
             return Ok();
         }
+        [HttpPut("CreateProjectDocument/{Id:int}")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> CreateProjectDocument(int Id, IFormFile Document)
+        {
+            if (Id <= 0)
+            {
+                return BadRequest(new { message = "Invalid Id" });
+            }
+            var project = await _db.Projects.AsNoTracking().FirstOrDefaultAsync(x => x.Id == Id);
+            if (User.FindFirstValue(ClaimTypes.Name) != project.ManagerId)
+            {
+                return Forbid();
+            }
+            if (project == null)
+            {
+                return NotFound(new { message = "Project not found" });
+            }
+            if (Document != null)
+            {
+                string fileName = project.Id + Path.GetExtension(Document.FileName);
+                string filepath = @"wwwroot/ProjectDocuments/" + fileName;
+                var directoryLocation = Path.Combine(Directory.GetCurrentDirectory(), filepath);
+                FileInfo file = new FileInfo(directoryLocation);
+                if (file.Exists)
+                {
+                    file.Delete();
+                }
+                using (var filestream = new FileStream(directoryLocation, FileMode.Create))
+                {
+                    await Document.CopyToAsync(filestream);
+                }
+                var baseUrl = $"{HttpContext.Request.Scheme}://{HttpContext.Request.Host.Value}{HttpContext.Request.PathBase.Value}";
+                project.DocumentUrl = $"{baseUrl}/ProjectDocuments/{fileName}";
+                project.DocumntLocalPath = filepath;
+            }
+            else
+            {
+                return BadRequest(new { message = "Invalid Document" });
+            }
+            _db.Projects.Update(project);
+            await _db.SaveChangesAsync();
+            return Ok();
+        }
+
+        [HttpPut("DeleteProjectDocument/{Id:int}")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> DeleteProjectDocument(int Id)
+        {
+            if (Id <= 0)
+            {
+                return BadRequest(new { message = "Invalid Id" });
+            }
+            var project = await _db.Projects.AsNoTracking().FirstOrDefaultAsync(x => x.Id == Id);
+            if (User.FindFirstValue(ClaimTypes.Name) != project.ManagerId)
+            {
+                return Forbid();
+            }
+            if (project == null)
+            {
+                return NotFound(new { message = "Project not found" });
+            }
+            if (!string.IsNullOrEmpty(project.DocumntLocalPath))
+            {
+                var oldFileDirectory = Path.Combine(Directory.GetCurrentDirectory(), project.DocumntLocalPath);
+                FileInfo file = new FileInfo(oldFileDirectory);
+                if (file.Exists)
+                {
+                    file.Delete();
+                }
+                project.DocumentUrl = null;
+                project.DocumntLocalPath = null;
+            }
+            else
+            {
+                return BadRequest(new { message = "Invalid Document" });
+            }
+            _db.Projects.Update(project);
+            await _db.SaveChangesAsync();
+            return Ok();
+        }
+
     }
 }
