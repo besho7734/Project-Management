@@ -8,6 +8,5 @@
         public DateTime CreatedDate { get; set; }
         public DateTime Deadline { get; set; }
         public string ManagerUserName { get; set; }
-        public string? DocumentUrl { get; set; }
     }
 }

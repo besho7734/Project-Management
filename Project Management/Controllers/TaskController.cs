@@ -147,7 +147,6 @@ namespace Project_Management.Controllers
             return Ok();
         }
 
-        [Authorize(Roles = "admin,manager")]
         [HttpPut("UpdateTask/{Id:int}")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]

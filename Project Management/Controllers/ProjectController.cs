@@ -284,6 +284,15 @@ namespace Project_Management.Controllers
             }
             if (Document != null)
             {
+                if (!string.IsNullOrEmpty(project.DocumntLocalPath))
+                {
+                    var oldFileDirectory = Path.Combine(Directory.GetCurrentDirectory(), project.DocumntLocalPath);
+                    FileInfo oldfile = new FileInfo(oldFileDirectory);
+                    if (oldfile.Exists)
+                    {
+                        oldfile.Delete();
+                    }
+                }
                 string fileName = project.Id + Path.GetExtension(Document.FileName);
                 string filepath = @"wwwroot/ProjectDocuments/" + fileName;
                 var directoryLocation = Path.Combine(Directory.GetCurrentDirectory(), filepath);
@@ -349,6 +358,28 @@ namespace Project_Management.Controllers
             await _db.SaveChangesAsync();
             return Ok();
         }
-
+        [HttpGet("GetProjectDocument/{Id:int}")]
+        [ProducesResponseType(StatusCodes.Status200OK,Type = typeof(string))]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> GetDocument(int Id)
+        {
+            if (Id <= 0)
+            {
+                return BadRequest(new { message = "Invalid Id" });
+            }
+            var project = await _db.Projects.FirstOrDefaultAsync(x => x.Id == Id);
+            if (project == null)
+            {
+                return NotFound(new { message = "Project not found" });
+            }
+            if (string.IsNullOrEmpty(project.DocumntLocalPath))
+            {
+                return NotFound(new { message = "There is no document to that project" });
+            }
+            return Ok(project.DocumentUrl);
+        }
     }
 }
